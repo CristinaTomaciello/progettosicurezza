@@ -2,121 +2,134 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Login passwordless</title>
+    <title>Biometric Passwordless Login</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; padding-top: 50px; background-color: #f0f2f5; position: relative; }
         
-        /* Tasto Reset in alto a destra */
         .reset-btn { position: absolute; top: 10px; right: 10px; background: #666; color: white; padding: 5px 10px; border: none; cursor: pointer; font-size: 12px; border-radius: 4px; }
-        .reset-btn:hover { background: #444; }
-
-        .container { width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15); text-align: center; }
+        .container { width: 100%; max-width: 500px; padding: 40px; border-radius: 12px; background: white; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }
         
-        input, button { width: 100%; margin: 10px 0; padding: 12px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; }
+        input { width: 100%; margin: 15px 0; padding: 15px; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; background: #f9f9f9; }
         
-        /* Bottoni */
-        button.primary { background-color: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.2s; }
-        button.primary:hover { background-color: #0056b3; }
+        button { width: 100%; margin: 10px 0; padding: 15px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; font-size: 16px; transition: transform 0.1s; }
+        button:active { transform: scale(0.98); }
         
-        button.logout { background-color: #dc3545; color: white; border: none; font-weight: bold; cursor: pointer; }
-        button.logout:hover { background-color: #a71d2a; }
+        button.primary { background-color: #007bff; color: white; }
+        button.login-btn { background-color: #28a745; color: white; }
+        button.logout { background-color: #dc3545; color: white; }
 
         .hidden { display: none; }
         
-        /* --- STILE AUDIT LOG (RIPRISTINATO) --- */
-        .audit-box { 
-            text-align: left; 
-            background: #f8f9fa; 
-            border: 1px solid #ddd; 
-            padding: 15px; 
-            border-radius: 5px; 
-            font-family: monospace; 
-            font-size: 11px; 
-            margin-top: 20px; 
-            word-break: break-all; 
-            color: #333;
-        }
-        .audit-title {
-            font-weight: bold;
-            color: #555;
-            border-bottom: 1px solid #ccc;
-            padding-bottom: 5px;
-            margin-bottom: 10px;
-            display: block;
-            font-size: 12px;
-        }
-        .audit-label { color: #007bff; font-weight: bold; }
+        /* Icona Biometrica */
+        .bio-icon { font-size: 40px; margin-bottom: 10px; display: block; }
+        
+        /* Audit Box */
+        .audit-box { text-align: left; background: #f1f3f5; border-left: 4px solid #28a745; padding: 15px; font-family: monospace; font-size: 12px; margin-top: 20px; word-break: break-all; color: #333; }
+        .label { color: #007bff; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <button class="reset-btn" onclick="resetSystem()">RESET DB & WALLETS</button>
+    <button class="reset-btn" onclick="resetSystem()">RESET DB</button>
 
     <div class="container">
         
         <div id="login-view">
-            <h2>Login Passwordless</h2>            
-            <input type="text" id="username" placeholder="Inserisci Username">
+            <span class="bio-icon"></span>
+            <h2>Login Biometrico</h2>
+            <p style="color:#666; margin-bottom: 20px;">Autenticazione protetta da Touch ID / Face ID</p>
             
-            <button class="primary" onclick="register()">Registrati</button>
+            <input type="text" id="username" placeholder="Inserisci il tuo Username">
+            
+            <button class="primary" onclick="registerWithTouchID()"> Registrati con Impronta</button>
             <div style="margin: 10px 0; border-top: 1px solid #eee;"></div>
-            <button class="primary" style="background-color: #28a745;" onclick="login()">Accedi</button>
+            <button class="login-btn" onclick="loginWithTouchID()"> Accedi con Impronta</button>
         </div>
 
         <div id="welcome-view" class="hidden">
-            <h1 style="color: #28a745;">Accesso Riuscito!</h1>
-            <h3>Utente: <span id="display-username" style="color: #007bff;">---</span></h3>
-            
-            <img src="https://img.icons8.com/color/96/000000/verified-account.png" alt="Verified">
+            <span class="bio-icon">✅</span>
+            <h1 style="color: #28a745;">Identità Verificata</h1>
+            <h3>Benvenuto, <span id="display-username" style="color: #007bff;">---</span></h3>
             
             <div class="audit-box">
-                <span class="audit-title">📜 Audit Log</span>
-                
-                <p><span class="audit-label">1. Challenge (Dal Server):</span><br>
-                <span id="log-challenge">---</span></p>
-                
-                <p><span class="audit-label">2. Firma Digitale (Dal Client):</span><br>
-                <span id="log-signature">---</span></p>
-                
-                <p><span class="audit-label">3. Esito Verifica:</span><br>
-                <span style="color: green; font-weight: bold;">Successo</span></p>
+                <p><strong>Audit Log (Sessione Sicura)</strong></p>
+                <p><span class="label">Metodo Sblocco:</span> Biometria (Secure Enclave)</p>
+                <p><span class="label">Challenge Server:</span> <span id="log-challenge">---</span></p>
+                <p><span class="label">Firma Digitale:</span> <span id="log-signature">---</span></p>
+                <p style="color: green; font-weight: bold; margin-top:10px;">AUTENTICAZIONE VALIDA</p>
             </div>
             
             <br>
-            <button class="logout" onclick="logout()">Esci (Chiudi Sessione)</button>
+            <button class="logout" onclick="logout()">Chiudi Sessione</button>
         </div>
 
-        <p id="status" style="font-weight:bold; margin-top:15px;"></p>
+        <p id="status" style="font-weight:bold; margin-top:20px; min-height: 20px;"></p>
     </div>
 
     <script>
-        // --- FUNZIONI UTENTE (REGISTRAZIONE & LOGIN) ---
+        // Attiva il sensore del dispositivo (TouchID/Windows Hello)
+        async function triggerBiometricAuth() {
+            if (!window.PublicKeyCredential) {
+                alert("Il tuo browser non supporta WebAuthn (Biometria).");
+                return false;
+            }
+            try {
+                // Generiamo una richiesta fittizia per far scattare il sensore
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
+                
+                await navigator.credentials.create({
+                    publicKey: {
+                        challenge: challenge,
+                        rp: { name: "Simulazione Secure Enclave" },
+                        user: { id: new Uint8Array(16), name: "User", displayName: "User" },
+                        pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+                        timeout: 60000
+                    }
+                });
+                return true; 
+            } catch (err) {
+                console.warn("Biometria annullata o fallita:", err);
+                return false;
+            }
+        }
 
-        async function register() {
+        // --- 1. REGISTRAZIONE ---
+        async function registerWithTouchID() {
             const username = document.getElementById('username').value;
-            // Validazione Input
-            if(!/^[a-zA-Z0-9]{3,20}$/.test(username)) {
-                return alert("Username non valido! Usa solo lettere e numeri.");
+            if(!/^[a-zA-Z0-9]{3,20}$/.test(username)) return alert("Username non valido!");
+
+            // 1. CHIEDI IMPRONTA
+            document.getElementById('status').innerText = "Metti il dito sul sensore per confermare...";
+            document.getElementById('status').style.color = "blue";
+            
+            const isBioOk = await triggerBiometricAuth();
+
+            if(!isBioOk) {
+                document.getElementById('status').innerText = "Impronta non riconosciuta. Accesso negato.";
+                document.getElementById('status').style.color = "red";
+                return;
             }
 
+            // 2. PROCEDI SOLO SE IMPRONTA OK
             try {
-                // 1. Genera Chiavi
+                // Genera chiavi
                 const keys = await window.crypto.subtle.generateKey(
                     { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
                     true, ["sign", "verify"]
                 );
 
-                // 2. Prepara le chiavi per il salvataggio (Export JWK)
                 const exportPriv = await window.crypto.subtle.exportKey("jwk", keys.privateKey);
                 const exportPub = await window.crypto.subtle.exportKey("jwk", keys.publicKey);
 
-                // 3. SIMULAZIONE: Salva nel "disco rigido" dell'utente (wallets.json)
+                // Salva nel "Secure Enclave simulato" (wallets.json)
                 await fetch('/client-sim/save-wallet', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username, keys: { privateKeyJWK: exportPriv, publicKeyJWK: exportPub } })
                 });
 
-                // 4. SERVER REALE: Invia solo la Pubblica al Database (users.json)
+                // Invia Pubblica al Server
                 const spkiPub = await window.crypto.subtle.exportKey("spki", keys.publicKey);
                 const pubBase64 = btoa(String.fromCharCode(...new Uint8Array(spkiPub)));
 
@@ -124,107 +137,92 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username, publicKey: pubBase64 })
                 });
-                
+
                 if(res.ok) {
-                    document.getElementById('status').innerText = `Registrato!`;
+                    document.getElementById('status').innerText = "Registrazione completata con protezione Biometrica!";
                     document.getElementById('status').style.color = "green";
-                } else {
-                    const err = await res.json();
-                    alert("Errore Server: " + err.message);
                 }
-            } catch (err) { alert("Errore Tecnico: " + err); }
+            } catch (err) { alert("Errore: " + err); }
         }
 
-        async function login() {
+        // --- 2. LOGIN ---
+        async function loginWithTouchID() {
             const username = document.getElementById('username').value;
             if(!username) return alert("Inserisci username");
 
+            // 1. CHIEDI IMPRONTA
+            document.getElementById('status').innerText = "Verifica identità in corso...";
+            document.getElementById('status').style.color = "blue";
+
+            const isBioOk = await triggerBiometricAuth();
+
+            if(!isBioOk) {
+                document.getElementById('status').innerText = "Accesso Negato: Biometria Fallita.";
+                document.getElementById('status').style.color = "red";
+                return;
+            }
+
+            // 2. PROCEDI SOLO SE IMPRONTA OK
             try {
-                // 1. SIMULAZIONE: Carica la chiave privata dal "disco" (wallets.json)
+                // Carica chiave privata (Simuliamo sblocco hardware)
                 const walletReq = await fetch('/client-sim/load-wallet', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username })
                 });
 
                 if(!walletReq.ok) {
-                    document.getElementById('status').innerText = `Errore: Nessuna chiave trovata per "${username}"`;
+                    document.getElementById('status').innerText = "Errore: Wallet non trovato."; 
                     document.getElementById('status').style.color = "red";
                     return;
                 }
 
                 const { keys } = await walletReq.json();
-                
-                // Ricostruisci l'oggetto CryptoKey dalla stringa JSON
                 const privateKey = await window.crypto.subtle.importKey(
-                    "jwk", keys.privateKeyJWK,
-                    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, true, ["sign"]
+                    "jwk", keys.privateKeyJWK, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, true, ["sign"]
                 );
 
-                // 2. Protocollo Challenge-Response Reale
+                // Challenge-Response
                 const chalReq = await fetch('/login-challenge', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username })
                 });
-                
-                if(!chalReq.ok) {
-                   const err = await chalReq.json();
-                   throw new Error(err.message);
-                }
-
                 const { challenge } = await chalReq.json();
 
-                // Firma la challenge
                 const signature = await window.crypto.subtle.sign(
                     "RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(challenge)
                 );
                 const sigBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
 
-                // Verifica col server
                 const verReq = await fetch('/login-verify', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username, signature: sigBase64 })
                 });
 
-                const verifyResult = await verReq.json();
-
                 if(verReq.ok) {
-                    // SE IL LOGIN VA A BUON FINE: Mostra la schermata con i LOG
                     showWelcome(username, challenge, sigBase64);
                 } else {
-                    document.getElementById('status').innerText = "Login Fallito: " + verifyResult.message;
+                    document.getElementById('status').innerText = "Firma non valida!";
                     document.getElementById('status').style.color = "red";
                 }
 
-            } catch (err) { 
-                console.error(err); 
-                document.getElementById('status').innerText = "Errore Login: " + err.message;
-                document.getElementById('status').style.color = "red";
-            }
+            } catch (err) { console.error(err); }
         }
 
-        // --- GESTIONE GRAFICA & RESET ---
-
+        // --- UTILITY E GRAFICA ---
         function showWelcome(user, chal, sig) {
             document.getElementById('login-view').classList.add('hidden');
             document.getElementById('welcome-view').classList.remove('hidden');
-            
             document.getElementById('display-username').innerText = user;
-            
-            // Popoliamo il Log Grafico con i dati reali della transazione
             document.getElementById('log-challenge').innerText = chal;
-            // Tronchiamo la firma per non rompere il layout
-            document.getElementById('log-signature').innerText = sig.substring(0, 60) + "...";
-            
+            document.getElementById('log-signature').innerText = sig.substring(0, 50) + "...";
             document.getElementById('status').innerText = "";
         }
 
-        function logout() {
-            location.reload(); // Semplice refresh per pulire la RAM e tornare al login
-        }
+        function logout() { location.reload(); }
 
         async function resetSystem() {
-            if(!confirm("⚠️ ATTENZIONE: Vuoi cancellare TUTTI gli utenti e TUTTE le chiavi? \nQuesta azione pulirà i file .json sul server.")) return;
-            await fetch('/reset-all', { method: 'POST' });
-            alert("Sistema resettato.");
-            location.reload();
+            if(confirm("Vuoi cancellare tutto il database?")) {
+                await fetch('/reset-all', { method: 'POST' });
+                location.reload();
+            }
         }
     </script>
 </body>

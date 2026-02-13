@@ -4,13 +4,13 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const USERS_FILE = path.join(__dirname, 'users.json');        // DB Server (Solo Pubbliche)
-const WALLETS_FILE = path.join(__dirname, 'wallets.json');    // SIMULAZIONE Client (Private)
+const USERS_FILE = path.join(__dirname, 'users.json');        // DB Server (Pubbliche)
+const WALLETS_FILE = path.join(__dirname, 'wallets.json');    // SIMULAZIONE Client Secure Enclave (Private)
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Funzione generica per leggere JSON
+// Funzioni lettura/scrittura file
 function readJsonFile(filename) {
     try {
         if (fs.existsSync(filename)) {
@@ -21,38 +21,63 @@ function readJsonFile(filename) {
     return {};
 }
 
-// Funzione generica per scrivere JSON
 function writeJsonFile(filename, data) {
     try { fs.writeFileSync(filename, JSON.stringify(data, null, 2)); }
     catch (err) { console.error(`Errore scrittura ${filename}:`, err); }
 }
 
-// --- 1. ROTTE LATO SERVER (Il vero Backend) ---
+// --- 1. GESTIONE WALLET LOCALE (Simulazione Secure Enclave) ---
+// Queste rotte vengono chiamate SOLO se il Touch ID ha dato esito positivo lato client
 
-// Registrazione (Salva solo Chiave Pubblica)
+app.post('/client-sim/save-wallet', (req, res) => {
+    const { username, keys } = req.body;
+    let wallets = readJsonFile(WALLETS_FILE);
+    
+    // Salviamo le chiavi "blindate" dall'autenticazione biometrica
+    wallets[username] = keys; 
+    
+    writeJsonFile(WALLETS_FILE, wallets);
+    console.log(`[SECURE ENCLAVE] Chiavi salvate per: ${username}`);
+    res.json({ message: "Wallet salvato" });
+});
+
+app.post('/client-sim/load-wallet', (req, res) => {
+    const { username } = req.body;
+    let wallets = readJsonFile(WALLETS_FILE);
+    
+    // Se siamo qui, assumiamo che il client abbia superato il check biometrico
+    if(wallets[username]) {
+        res.json({ keys: wallets[username] });
+    } else {
+        res.status(404).json({ message: "Nessun wallet trovato per questo utente." });
+    }
+});
+
+// --- 2. LOGICA SERVER DI AUTENTICAZIONE (Backend Reale) ---
+
 app.post('/register', (req, res) => {
     const { username, publicKey } = req.body;
     
-    // Validazione
     if (!username || !/^[a-zA-Z0-9]{3,20}$/.test(username)) {
         return res.status(400).json({ message: "Username non valido" });
     }
 
     let users = readJsonFile(USERS_FILE);
+    // Salviamo solo la chiave pubblica
     users[username] = { publicKey: publicKey, currentChallenge: null };
     
     writeJsonFile(USERS_FILE, users);
-    console.log(`[SERVER] Utente registrato nel DB: ${username}`);
+    console.log(`[SERVER] Utente registrato: ${username}`);
     res.json({ message: "OK" });
 });
 
-// Login Fase 1: Challenge
 app.post('/login-challenge', (req, res) => {
     const { username } = req.body;
     let users = readJsonFile(USERS_FILE);
 
-    if (!users[username]) return res.status(404).json({ message: "Utente non trovato nel Server" });
+    if (!users[username]) return res.status(404).json({ message: "Utente non trovato nel server" });
 
+    // Genera Nonce casuale
     const challenge = crypto.randomBytes(32).toString('hex');
     users[username].currentChallenge = challenge;
     
@@ -60,61 +85,42 @@ app.post('/login-challenge', (req, res) => {
     res.json({ challenge });
 });
 
-// Login Fase 2: Verifica
 app.post('/login-verify', (req, res) => {
     const { username, signature } = req.body;
     let users = readJsonFile(USERS_FILE);
     const user = users[username];
 
-    if (!user || !user.currentChallenge) return res.status(400).json({ message: "Sessione invalida" });
+    if (!user || !user.currentChallenge) return res.status(400).json({ message: "Sessione scaduta o invalida" });
 
     try {
         const pemKey = `-----BEGIN PUBLIC KEY-----\n${user.publicKey.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
-        const isValid = crypto.verify("sha256", Buffer.from(user.currentChallenge), pemKey, Buffer.from(signature, 'base64'));
+        
+        const isValid = crypto.verify(
+            "sha256",
+            Buffer.from(user.currentChallenge),
+            pemKey,
+            Buffer.from(signature, 'base64')
+        );
 
-        // Brucia la sfida
+        // Brucia la sfida (Replay Attack Protection)
         user.currentChallenge = null;
         writeJsonFile(USERS_FILE, users);
 
         if (isValid) {
-            console.log(`[SERVER] Login SUCCESSO: ${username}`);
+            console.log(`[SERVER] Login SUCCESSO per ${username}`);
             res.json({ message: "Autenticazione riuscita!" });
         } else {
-            console.log(`[SERVER] Login FALLITO: ${username}`);
-            res.status(401).json({ message: "Firma non valida!" });
+            console.log(`[SERVER] Login FALLITO per ${username}`);
+            res.status(401).json({ message: "Firma digitale non valida!" });
         }
-    } catch (err) { res.status(500).json({ message: "Errore verifica" }); }
+    } catch (err) { res.status(500).json({ message: "Errore verifica server" }); }
 });
 
-// --- 2. ROTTE SIMULAZIONE CLIENT (Il finto Hard Disk dell'utente) ---
-
-// Salva le chiavi nel "Portafoglio" simulato
-app.post('/client-sim/save-wallet', (req, res) => {
-    const { username, keys } = req.body; // keys contiene sia privata che pubblica (JWK)
-    let wallets = readJsonFile(WALLETS_FILE);
-    wallets[username] = keys;
-    writeJsonFile(WALLETS_FILE, wallets);
-    console.log(`[CLIENT-SIM] Chiavi salvate nel wallet sicuro di: ${username}`);
-    res.json({ message: "Wallet aggiornato" });
-});
-
-// Leggi le chiavi dal "Portafoglio" simulato
-app.post('/client-sim/load-wallet', (req, res) => {
-    const { username } = req.body;
-    let wallets = readJsonFile(WALLETS_FILE);
-    if(wallets[username]) {
-        res.json({ keys: wallets[username] });
-    } else {
-        res.status(404).json({ message: "Nessuna chiave trovata nel wallet locale" });
-    }
-});
-
-// --- 3. ROTTA RESET TOTALE (Risolve i problemi di sincronizzazione) ---
+// Reset Totale per pulizia
 app.post('/reset-all', (req, res) => {
     writeJsonFile(USERS_FILE, {});
     writeJsonFile(WALLETS_FILE, {});
-    console.log("--- SISTEMA RESETTATO (DB e Wallets puliti) ---");
-    res.json({ message: "Sistema resettato con successo!" });
+    res.json({ message: "Reset completato" });
 });
 
-app.listen(3000, () => console.log("Server avviato su http://localhost:3000"));
+app.listen(3000, () => console.log("Server biometrico attivo su http://localhost:3000"));
