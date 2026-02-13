@@ -2,203 +2,229 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Login Passwordless - Esame Sicurezza</title>
+    <title>Login passwordless</title>
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; padding: 50px; background-color: #f4f4f9; }
-        .container { max-width: 400px; border: 1px solid #ccc; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        input, button { width: 100%; margin: 10px 0; padding: 12px; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; }
-        button { cursor: pointer; background-color: #007bff; color: white; border: none; font-weight: bold; }
-        button:hover { background-color: #0056b3; }
-        #status { color: #333; font-weight: bold; text-align: center; margin-top: 15px; min-height: 1.2em; }
-        hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; padding-top: 50px; background-color: #f0f2f5; position: relative; }
+        
+        /* Tasto Reset in alto a destra */
+        .reset-btn { position: absolute; top: 10px; right: 10px; background: #666; color: white; padding: 5px 10px; border: none; cursor: pointer; font-size: 12px; border-radius: 4px; }
+        .reset-btn:hover { background: #444; }
+
+        .container { width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15); text-align: center; }
+        
+        input, button { width: 100%; margin: 10px 0; padding: 12px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; }
+        
+        /* Bottoni */
+        button.primary { background-color: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+        button.primary:hover { background-color: #0056b3; }
+        
+        button.logout { background-color: #dc3545; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button.logout:hover { background-color: #a71d2a; }
+
+        .hidden { display: none; }
+        
+        /* --- STILE AUDIT LOG (RIPRISTINATO) --- */
+        .audit-box { 
+            text-align: left; 
+            background: #f8f9fa; 
+            border: 1px solid #ddd; 
+            padding: 15px; 
+            border-radius: 5px; 
+            font-family: monospace; 
+            font-size: 11px; 
+            margin-top: 20px; 
+            word-break: break-all; 
+            color: #333;
+        }
+        .audit-title {
+            font-weight: bold;
+            color: #555;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+            display: block;
+            font-size: 12px;
+        }
+        .audit-label { color: #007bff; font-weight: bold; }
     </style>
 </head>
 <body>
+
+    <button class="reset-btn" onclick="resetSystem()">RESET DB & WALLETS</button>
+
     <div class="container">
-        <h2>Login Passwordless</h2>
-        <input type="text" id="username" placeholder="Inserisci Username">
         
-        <button onclick="register()">1. Registrati</button>
-        <hr>
-        <button onclick="login()">2. Accedi</button>
-        
-        <p id="status"></p>
+        <div id="login-view">
+            <h2>Login Passwordless</h2>            
+            <input type="text" id="username" placeholder="Inserisci Username">
+            
+            <button class="primary" onclick="register()">Registrati</button>
+            <div style="margin: 10px 0; border-top: 1px solid #eee;"></div>
+            <button class="primary" style="background-color: #28a745;" onclick="login()">Accedi</button>
+        </div>
+
+        <div id="welcome-view" class="hidden">
+            <h1 style="color: #28a745;">Accesso Riuscito!</h1>
+            <h3>Utente: <span id="display-username" style="color: #007bff;">---</span></h3>
+            
+            <img src="https://img.icons8.com/color/96/000000/verified-account.png" alt="Verified">
+            
+            <div class="audit-box">
+                <span class="audit-title">📜 Audit Log</span>
+                
+                <p><span class="audit-label">1. Challenge (Dal Server):</span><br>
+                <span id="log-challenge">---</span></p>
+                
+                <p><span class="audit-label">2. Firma Digitale (Dal Client):</span><br>
+                <span id="log-signature">---</span></p>
+                
+                <p><span class="audit-label">3. Esito Verifica:</span><br>
+                <span style="color: green; font-weight: bold;">Successo</span></p>
+            </div>
+            
+            <br>
+            <button class="logout" onclick="logout()">Esci (Chiudi Sessione)</button>
+        </div>
+
+        <p id="status" style="font-weight:bold; margin-top:15px;"></p>
     </div>
 
     <script>
-        /**
-         * KEYRING (Portachiavi in RAM)
-         * Qui caricheremo le chiavi attive per l'uso immediato.
-         */
-        window.keyRing = {};
-
-        // --- NUOVO: Funzione per caricare le chiavi dal LocalStorage all'avvio ---
-        async function loadKeysFromStorage() {
-            const savedData = localStorage.getItem('my_secure_wallet');
-            if (savedData) {
-                const parsedData = JSON.parse(savedData);
-                console.log("Trovati utenti salvati:", Object.keys(parsedData));
-
-                // Cicliamo su ogni utente salvato e "ricostruiamo" le chiavi crittografiche
-                for (const [username, keyData] of Object.entries(parsedData)) {
-                    try {
-                        const privateKey = await window.crypto.subtle.importKey(
-                            "jwk", keyData.privateKeyJWK,
-                            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-                            true, ["sign"]
-                        );
-                        
-                        const publicKey = await window.crypto.subtle.importKey(
-                            "jwk", keyData.publicKeyJWK,
-                            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-                            true, ["verify"]
-                        );
-
-                        // Rimettiamo le chiavi ricostruite nel keyring in RAM
-                        window.keyRing[username] = { privateKey, publicKey };
-                    } catch (e) {
-                        console.error("Errore recupero chiavi per", username, e);
-                    }
-                }
-            }
-        }
-
-        // Chiamiamo questa funzione appena parte la pagina!
-        loadKeysFromStorage();
-        // ---------------------------------------------------------------------
+        // --- FUNZIONI UTENTE (REGISTRAZIONE & LOGIN) ---
 
         async function register() {
             const username = document.getElementById('username').value;
-            if(!username) return alert("Inserisci un nome utente");
-
-            // Controllo veloce se esiste già per non sovrascrivere per sbaglio
-            if(window.keyRing[username]) {
-                if(!confirm("Utente già presente in locale. Vuoi sovrascriverlo?")) return;
+            // Validazione Input
+            if(!/^[a-zA-Z0-9]{3,20}$/.test(username)) {
+                return alert("Username non valido! Usa solo lettere e numeri.");
             }
 
             try {
-                // 1. Genera coppia di chiavi RSA
+                // 1. Genera Chiavi
                 const keys = await window.crypto.subtle.generateKey(
-                    {
-                        name: "RSASSA-PKCS1-v1_5",
-                        modulusLength: 2048,
-                        publicExponent: new Uint8Array([1, 0, 1]),
-                        hash: "SHA-256",
-                    },
-                    true,
-                    ["sign", "verify"]
+                    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+                    true, ["sign", "verify"]
                 );
 
-                // --- NUOVO: Salvataggio persistente nel LocalStorage ---
-                // Dobbiamo esportare in formato JWK (JSON Web Key) per poterle salvare come testo
+                // 2. Prepara le chiavi per il salvataggio (Export JWK)
                 const exportPriv = await window.crypto.subtle.exportKey("jwk", keys.privateKey);
                 const exportPub = await window.crypto.subtle.exportKey("jwk", keys.publicKey);
 
-                // Recuperiamo il database attuale o ne creiamo uno nuovo
-                const currentWallet = JSON.parse(localStorage.getItem('my_secure_wallet') || '{}');
-                
-                // Aggiorniamo il database
-                currentWallet[username] = {
-                    privateKeyJWK: exportPriv,
-                    publicKeyJWK: exportPub
-                };
-                
-                // Salviamo tutto nel browser
-                localStorage.setItem('my_secure_wallet', JSON.stringify(currentWallet));
-                // -----------------------------------------------------
+                // 3. SIMULAZIONE: Salva nel "disco rigido" dell'utente (wallets.json)
+                await fetch('/client-sim/save-wallet', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, keys: { privateKeyJWK: exportPriv, publicKeyJWK: exportPub } })
+                });
 
-                // Aggiorniamo anche la RAM per l'uso immediato
-                window.keyRing[username] = keys;
+                // 4. SERVER REALE: Invia solo la Pubblica al Database (users.json)
+                const spkiPub = await window.crypto.subtle.exportKey("spki", keys.publicKey);
+                const pubBase64 = btoa(String.fromCharCode(...new Uint8Array(spkiPub)));
 
-                // 2. Esporta la chiave pubblica per il server (SPKI format)
-                // Nota: Usiamo SPKI per il server (standard) e JWK per il localStorage (più comodo per JSON)
-                const exportedPublic = await window.crypto.subtle.exportKey("spki", keys.publicKey);
-                const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(exportedPublic)));
-
-                // 3. Invia al server
-                const response = await fetch('/register', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username, publicKey: publicKeyBase64 })
+                const res = await fetch('/register', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, publicKey: pubBase64 })
                 });
                 
-                const result = await response.json();
-                document.getElementById('status').innerText = `Registrato e salvato nel browser: ${username}`;
-                document.getElementById('status').style.color = "green";
-
-            } catch (err) {
-                console.error(err);
-                alert("Errore durante la registrazione");
-            }
+                if(res.ok) {
+                    document.getElementById('status').innerText = `Registrato!`;
+                    document.getElementById('status').style.color = "green";
+                } else {
+                    const err = await res.json();
+                    alert("Errore Server: " + err.message);
+                }
+            } catch (err) { alert("Errore Tecnico: " + err); }
         }
 
         async function login() {
             const username = document.getElementById('username').value;
-            if(!username) return alert("Inserisci lo username");
-            
-            // Recupero delle chiavi dalla RAM (che ora è popolata anche dopo il refresh!)
-            const userKeys = window.keyRing[username];
-
-            if (!userKeys) {
-                document.getElementById('status').innerText = `Errore: Nessuna chiave trovata nel browser per "${username}". Devi prima registrarti su questo dispositivo.`;
-                document.getElementById('status').style.color = "red";
-                return;
-            }
+            if(!username) return alert("Inserisci username");
 
             try {
-                // 1. Richiedi la challenge
-                const chalReq = await fetch('/login-challenge', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                // 1. SIMULAZIONE: Carica la chiave privata dal "disco" (wallets.json)
+                const walletReq = await fetch('/client-sim/load-wallet', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username })
                 });
-                
-                if (!chalReq.ok) {
-                    const errorData = await chalReq.json();
-                    throw new Error(errorData.message || "Utente non trovato");
-                }
-                
-                const { challenge } = await chalReq.json();
-                console.log("Challenge ricevuta:", challenge);
 
-                // 2. Firma la challenge
-                const encoder = new TextEncoder();
-                // Importante: Assicurati che challenge sia convertita correttamente in Buffer
-                // Poiché il server la manda in Hex, ma qui la trattiamo come stringa, 
-                // è meglio se il server manda Hex e noi firmiamo i bytes.
-                // In questo esempio semplificato firmiamo la stringa della challenge.
-                const challengeData = encoder.encode(challenge);
+                if(!walletReq.ok) {
+                    document.getElementById('status').innerText = `Errore: Nessuna chiave trovata per "${username}"`;
+                    document.getElementById('status').style.color = "red";
+                    return;
+                }
+
+                const { keys } = await walletReq.json();
                 
-                const signature = await window.crypto.subtle.sign(
-                    "RSASSA-PKCS1-v1_5",
-                    userKeys.privateKey,
-                    challengeData
+                // Ricostruisci l'oggetto CryptoKey dalla stringa JSON
+                const privateKey = await window.crypto.subtle.importKey(
+                    "jwk", keys.privateKeyJWK,
+                    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, true, ["sign"]
                 );
 
-                const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
-
-                // 3. Invia la firma
-                const verifyReq = await fetch('/login-verify', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username, signature: signatureBase64 })
+                // 2. Protocollo Challenge-Response Reale
+                const chalReq = await fetch('/login-challenge', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username })
                 });
                 
-                const result = await verifyReq.json();
-                
-                if (verifyReq.ok) {
-                    document.getElementById('status').innerText = "Login Riuscito! Sei autenticato.";
-                    document.getElementById('status').style.color = "green";
+                if(!chalReq.ok) {
+                   const err = await chalReq.json();
+                   throw new Error(err.message);
+                }
+
+                const { challenge } = await chalReq.json();
+
+                // Firma la challenge
+                const signature = await window.crypto.subtle.sign(
+                    "RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(challenge)
+                );
+                const sigBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+                // Verifica col server
+                const verReq = await fetch('/login-verify', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username, signature: sigBase64 })
+                });
+
+                const verifyResult = await verReq.json();
+
+                if(verReq.ok) {
+                    // SE IL LOGIN VA A BUON FINE: Mostra la schermata con i LOG
+                    showWelcome(username, challenge, sigBase64);
                 } else {
-                    document.getElementById('status').innerText = "Login Fallito: " + result.message;
+                    document.getElementById('status').innerText = "Login Fallito: " + verifyResult.message;
                     document.getElementById('status').style.color = "red";
                 }
-                
-            } catch (err) {
-                console.error(err);
-                document.getElementById('status').innerText = "Errore tecnico: " + err.message;
+
+            } catch (err) { 
+                console.error(err); 
+                document.getElementById('status').innerText = "Errore Login: " + err.message;
                 document.getElementById('status').style.color = "red";
             }
+        }
+
+        // --- GESTIONE GRAFICA & RESET ---
+
+        function showWelcome(user, chal, sig) {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('welcome-view').classList.remove('hidden');
+            
+            document.getElementById('display-username').innerText = user;
+            
+            // Popoliamo il Log Grafico con i dati reali della transazione
+            document.getElementById('log-challenge').innerText = chal;
+            // Tronchiamo la firma per non rompere il layout
+            document.getElementById('log-signature').innerText = sig.substring(0, 60) + "...";
+            
+            document.getElementById('status').innerText = "";
+        }
+
+        function logout() {
+            location.reload(); // Semplice refresh per pulire la RAM e tornare al login
+        }
+
+        async function resetSystem() {
+            if(!confirm("⚠️ ATTENZIONE: Vuoi cancellare TUTTI gli utenti e TUTTE le chiavi? \nQuesta azione pulirà i file .json sul server.")) return;
+            await fetch('/reset-all', { method: 'POST' });
+            alert("Sistema resettato.");
+            location.reload();
         }
     </script>
 </body>
