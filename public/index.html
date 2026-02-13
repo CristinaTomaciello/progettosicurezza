@@ -27,18 +27,57 @@
 
     <script>
         /**
-         * KEYRING (Portachiavi)
-         * Usiamo un oggetto per mappare ogni username alla propria coppia di chiavi.
-         * Questo impedisce che l'ultimo utente registrato sovrascriva i precedenti.
+         * KEYRING (Portachiavi in RAM)
+         * Qui caricheremo le chiavi attive per l'uso immediato.
          */
         window.keyRing = {};
+
+        // --- NUOVO: Funzione per caricare le chiavi dal LocalStorage all'avvio ---
+        async function loadKeysFromStorage() {
+            const savedData = localStorage.getItem('my_secure_wallet');
+            if (savedData) {
+                const parsedData = JSON.parse(savedData);
+                console.log("Trovati utenti salvati:", Object.keys(parsedData));
+
+                // Cicliamo su ogni utente salvato e "ricostruiamo" le chiavi crittografiche
+                for (const [username, keyData] of Object.entries(parsedData)) {
+                    try {
+                        const privateKey = await window.crypto.subtle.importKey(
+                            "jwk", keyData.privateKeyJWK,
+                            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+                            true, ["sign"]
+                        );
+                        
+                        const publicKey = await window.crypto.subtle.importKey(
+                            "jwk", keyData.publicKeyJWK,
+                            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+                            true, ["verify"]
+                        );
+
+                        // Rimettiamo le chiavi ricostruite nel keyring in RAM
+                        window.keyRing[username] = { privateKey, publicKey };
+                    } catch (e) {
+                        console.error("Errore recupero chiavi per", username, e);
+                    }
+                }
+            }
+        }
+
+        // Chiamiamo questa funzione appena parte la pagina!
+        loadKeysFromStorage();
+        // ---------------------------------------------------------------------
 
         async function register() {
             const username = document.getElementById('username').value;
             if(!username) return alert("Inserisci un nome utente");
 
+            // Controllo veloce se esiste già per non sovrascrivere per sbaglio
+            if(window.keyRing[username]) {
+                if(!confirm("Utente già presente in locale. Vuoi sovrascriverlo?")) return;
+            }
+
             try {
-                // 1. Genera coppia di chiavi RSA specifica per l'utente
+                // 1. Genera coppia di chiavi RSA
                 const keys = await window.crypto.subtle.generateKey(
                     {
                         name: "RSASSA-PKCS1-v1_5",
@@ -50,10 +89,29 @@
                     ["sign", "verify"]
                 );
 
-                // Salvataggio nel portachiavi usando lo username come etichetta
+                // --- NUOVO: Salvataggio persistente nel LocalStorage ---
+                // Dobbiamo esportare in formato JWK (JSON Web Key) per poterle salvare come testo
+                const exportPriv = await window.crypto.subtle.exportKey("jwk", keys.privateKey);
+                const exportPub = await window.crypto.subtle.exportKey("jwk", keys.publicKey);
+
+                // Recuperiamo il database attuale o ne creiamo uno nuovo
+                const currentWallet = JSON.parse(localStorage.getItem('my_secure_wallet') || '{}');
+                
+                // Aggiorniamo il database
+                currentWallet[username] = {
+                    privateKeyJWK: exportPriv,
+                    publicKeyJWK: exportPub
+                };
+                
+                // Salviamo tutto nel browser
+                localStorage.setItem('my_secure_wallet', JSON.stringify(currentWallet));
+                // -----------------------------------------------------
+
+                // Aggiorniamo anche la RAM per l'uso immediato
                 window.keyRing[username] = keys;
 
-                // 2. Esporta la chiave pubblica per il server
+                // 2. Esporta la chiave pubblica per il server (SPKI format)
+                // Nota: Usiamo SPKI per il server (standard) e JWK per il localStorage (più comodo per JSON)
                 const exportedPublic = await window.crypto.subtle.exportKey("spki", keys.publicKey);
                 const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(exportedPublic)));
 
@@ -65,8 +123,9 @@
                 });
                 
                 const result = await response.json();
-                document.getElementById('status').innerText = `${username} registrazione effettuata con successo`;
+                document.getElementById('status').innerText = `Registrato e salvato nel browser: ${username}`;
                 document.getElementById('status').style.color = "green";
+
             } catch (err) {
                 console.error(err);
                 alert("Errore durante la registrazione");
@@ -77,17 +136,17 @@
             const username = document.getElementById('username').value;
             if(!username) return alert("Inserisci lo username");
             
-            // Recupero delle chiavi corrette dal portachiavi
+            // Recupero delle chiavi dalla RAM (che ora è popolata anche dopo il refresh!)
             const userKeys = window.keyRing[username];
 
             if (!userKeys) {
-                document.getElementById('status').innerText = `Errore: Nessuna chiave in memoria per "${username}".`;
+                document.getElementById('status').innerText = `Errore: Nessuna chiave trovata nel browser per "${username}". Devi prima registrarti su questo dispositivo.`;
                 document.getElementById('status').style.color = "red";
                 return;
             }
 
             try {
-                // 1. Richiedi la challenge specifica per l'utente
+                // 1. Richiedi la challenge
                 const chalReq = await fetch('/login-challenge', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -100,10 +159,16 @@
                 }
                 
                 const { challenge } = await chalReq.json();
+                console.log("Challenge ricevuta:", challenge);
 
-                // 2. Firma la challenge con la CHIAVE PRIVATA corretta
+                // 2. Firma la challenge
                 const encoder = new TextEncoder();
+                // Importante: Assicurati che challenge sia convertita correttamente in Buffer
+                // Poiché il server la manda in Hex, ma qui la trattiamo come stringa, 
+                // è meglio se il server manda Hex e noi firmiamo i bytes.
+                // In questo esempio semplificato firmiamo la stringa della challenge.
                 const challengeData = encoder.encode(challenge);
+                
                 const signature = await window.crypto.subtle.sign(
                     "RSASSA-PKCS1-v1_5",
                     userKeys.privateKey,
@@ -112,7 +177,7 @@
 
                 const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
 
-                // 3. Invia la firma per la verifica
+                // 3. Invia la firma
                 const verifyReq = await fetch('/login-verify', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -120,10 +185,18 @@
                 });
                 
                 const result = await verifyReq.json();
-                document.getElementById('status').innerText = result.message;
-                document.getElementById('status').style.color = verifyReq.ok ? "green" : "red";
+                
+                if (verifyReq.ok) {
+                    document.getElementById('status').innerText = "Login Riuscito! Sei autenticato.";
+                    document.getElementById('status').style.color = "green";
+                } else {
+                    document.getElementById('status').innerText = "Login Fallito: " + result.message;
+                    document.getElementById('status').style.color = "red";
+                }
+                
             } catch (err) {
-                document.getElementById('status').innerText = "Errore: " + err.message;
+                console.error(err);
+                document.getElementById('status').innerText = "Errore tecnico: " + err.message;
                 document.getElementById('status').style.color = "red";
             }
         }

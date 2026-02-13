@@ -49,6 +49,7 @@ app.post('/login-challenge', (req, res) => {
 
     if (!currentUsers[username]) return res.status(404).json({ message: "Utente non trovato" });
 
+    //genere un numero causuale da attaccare alla challange per evitare il replay-attacks
     const challenge = crypto.randomBytes(32).toString('hex');
     currentUsers[username].currentChallenge = challenge;
     
