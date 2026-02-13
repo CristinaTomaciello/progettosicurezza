@@ -1,0 +1,10 @@
+# Dipendenze: non si caricano mai perché il tutor le installerà con 'npm install'
+node_modules/
+
+# File di sistema (macOS/Windows)
+.DS_Store
+Thumbs.db
+
+# File di ambiente o log (se presenti)
+npm-debug.log*
+.env

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Login Passwordless - Esame Sicurezza</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; padding: 50px; background-color: #f4f4f9; }
+        .container { max-width: 400px; border: 1px solid #ccc; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        input, button { width: 100%; margin: 10px 0; padding: 12px; border-radius: 4px; border: 1px solid #ddd; box-sizing: border-box; }
+        button { cursor: pointer; background-color: #007bff; color: white; border: none; font-weight: bold; }
+        button:hover { background-color: #0056b3; }
+        #status { color: #333; font-weight: bold; text-align: center; margin-top: 15px; min-height: 1.2em; }
+        hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Login Passwordless</h2>
+        <input type="text" id="username" placeholder="Inserisci Username">
+        
+        <button onclick="register()">1. Registrati</button>
+        <hr>
+        <button onclick="login()">2. Accedi</button>
+        
+        <p id="status"></p>
+    </div>
+
+    <script>
+        /**
+         * KEYRING (Portachiavi)
+         * Usiamo un oggetto per mappare ogni username alla propria coppia di chiavi.
+         * Questo impedisce che l'ultimo utente registrato sovrascriva i precedenti.
+         */
+        window.keyRing = {};
+
+        async function register() {
+            const username = document.getElementById('username').value;
+            if(!username) return alert("Inserisci un nome utente");
+
+            try {
+                // 1. Genera coppia di chiavi RSA specifica per l'utente
+                const keys = await window.crypto.subtle.generateKey(
+                    {
+                        name: "RSASSA-PKCS1-v1_5",
+                        modulusLength: 2048,
+                        publicExponent: new Uint8Array([1, 0, 1]),
+                        hash: "SHA-256",
+                    },
+                    true,
+                    ["sign", "verify"]
+                );
+
+                // Salvataggio nel portachiavi usando lo username come etichetta
+                window.keyRing[username] = keys;
+
+                // 2. Esporta la chiave pubblica per il server
+                const exportedPublic = await window.crypto.subtle.exportKey("spki", keys.publicKey);
+                const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(exportedPublic)));
+
+                // 3. Invia al server
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, publicKey: publicKeyBase64 })
+                });
+                
+                const result = await response.json();
+                document.getElementById('status').innerText = `${username} registrazione effettuata con successo`;
+                document.getElementById('status').style.color = "green";
+            } catch (err) {
+                console.error(err);
+                alert("Errore durante la registrazione");
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            if(!username) return alert("Inserisci lo username");
+            
+            // Recupero delle chiavi corrette dal portachiavi
+            const userKeys = window.keyRing[username];
+
+            if (!userKeys) {
+                document.getElementById('status').innerText = `Errore: Nessuna chiave in memoria per "${username}".`;
+                document.getElementById('status').style.color = "red";
+                return;
+            }
+
+            try {
+                // 1. Richiedi la challenge specifica per l'utente
+                const chalReq = await fetch('/login-challenge', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username })
+                });
+                
+                if (!chalReq.ok) {
+                    const errorData = await chalReq.json();
+                    throw new Error(errorData.message || "Utente non trovato");
+                }
+                
+                const { challenge } = await chalReq.json();
+
+                // 2. Firma la challenge con la CHIAVE PRIVATA corretta
+                const encoder = new TextEncoder();
+                const challengeData = encoder.encode(challenge);
+                const signature = await window.crypto.subtle.sign(
+                    "RSASSA-PKCS1-v1_5",
+                    userKeys.privateKey,
+                    challengeData
+                );
+
+                const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+                // 3. Invia la firma per la verifica
+                const verifyReq = await fetch('/login-verify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, signature: signatureBase64 })
+                });
+                
+                const result = await verifyReq.json();
+                document.getElementById('status').innerText = result.message;
+                document.getElementById('status').style.color = verifyReq.ok ? "green" : "red";
+            } catch (err) {
+                document.getElementById('status').innerText = "Errore: " + err.message;
+                document.getElementById('status').style.color = "red";
+            }
+        }
+    </script>
+</body>
+</html>
