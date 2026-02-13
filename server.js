@@ -26,7 +26,7 @@ function writeJsonFile(filename, data) {
     catch (err) { console.error(`Errore scrittura ${filename}:`, err); }
 }
 
-// --- 1. GESTIONE WALLET LOCALE (Simulazione Secure Enclave) ---
+// 1. GESTIONE WALLET LOCALE (Simulazione Secure Enclave) ---
 // Queste rotte vengono chiamate SOLO se il Touch ID ha dato esito positivo lato client
 
 app.post('/client-sim/save-wallet', (req, res) => {
@@ -53,7 +53,7 @@ app.post('/client-sim/load-wallet', (req, res) => {
     }
 });
 
-// --- 2. LOGICA SERVER DI AUTENTICAZIONE (Backend Reale) ---
+// 2. LOGICA SERVER DI AUTENTICAZIONE (Backend Reale) ---
 
 app.post('/register', (req, res) => {
     const { username, publicKey } = req.body;

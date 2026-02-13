@@ -95,7 +95,7 @@
             }
         }
 
-        // --- 1. REGISTRAZIONE ---
+        // 1. REGISTRAZIONE 
         async function registerWithTouchID() {
             const username = document.getElementById('username').value;
             if(!/^[a-zA-Z0-9]{3,20}$/.test(username)) return alert("Username non valido!");
@@ -145,7 +145,7 @@
             } catch (err) { alert("Errore: " + err); }
         }
 
-        // --- 2. LOGIN ---
+        // 2. LOGIN 
         async function loginWithTouchID() {
             const username = document.getElementById('username').value;
             if(!username) return alert("Inserisci username");
@@ -206,7 +206,7 @@
             } catch (err) { console.error(err); }
         }
 
-        // --- UTILITY E GRAFICA ---
+        // Vista di Benvenuto con Audit Log
         function showWelcome(user, chal, sig) {
             document.getElementById('login-view').classList.add('hidden');
             document.getElementById('welcome-view').classList.remove('hidden');
