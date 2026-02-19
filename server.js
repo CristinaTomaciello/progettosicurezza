@@ -71,6 +71,8 @@ app.post('/register', (req, res) => {
     res.json({ message: "OK" });
 });
 
+//qui avviene la generazione della sfida (challenge) che viene inviata al client dopo che quest'ultimo ha inserito il proprio username. 
+// La sfida è un nonce casuale che il client deve firmare con la propria chiave privata per dimostrare la proprietà dell'identità.
 app.post('/login-challenge', (req, res) => {
     const { username } = req.body;
     let users = readJsonFile(USERS_FILE);
@@ -93,8 +95,10 @@ app.post('/login-verify', (req, res) => {
     if (!user || !user.currentChallenge) return res.status(400).json({ message: "Sessione scaduta o invalida" });
 
     try {
+        // Prepara la chiave pubblica in formato PEM per la verifica
         const pemKey = `-----BEGIN PUBLIC KEY-----\n${user.publicKey.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
         
+        //qui avviene la verifica della firma digitale usando la chiave pubblica registrata e la sfida (challenge) inviata al client
         const isValid = crypto.verify(
             "sha256",
             Buffer.from(user.currentChallenge),

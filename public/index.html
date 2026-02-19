@@ -104,6 +104,7 @@
             document.getElementById('status').innerText = "Metti il dito sul sensore per confermare...";
             document.getElementById('status').style.color = "blue";
             
+            //qui scatta il sensore biometrico, se l'utente conferma con successo, isBioOk sarà true, altrimenti false
             const isBioOk = await triggerBiometricAuth();
 
             if(!isBioOk) {
@@ -181,17 +182,19 @@
                     "jwk", keys.privateKeyJWK, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, true, ["sign"]
                 );
 
-                // Challenge-Response
+                // viene chieste la sfida al server, che poi dovrà essere firmata con la chiave privata e restituita per la verifica
                 const chalReq = await fetch('/login-challenge', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username })
                 });
                 const { challenge } = await chalReq.json();
 
+                // Firma la sfida con la chiave privata
                 const signature = await window.crypto.subtle.sign(
                     "RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(challenge)
                 );
                 const sigBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
 
+                // Invia al server per verifica
                 const verReq = await fetch('/login-verify', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username, signature: sigBase64 })
                 });
